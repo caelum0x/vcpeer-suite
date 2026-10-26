@@ -1,0 +1,60 @@
+# git folder
+.git
+
+# npm
+node_modules
+npm-debug.log
+
+# bun
+bun.lock
+
+# mac
+.DS_Store
+
+# cache
+.cache
+
+# personal env
+.env
+config.js
+
+# VCPeer Send "Send a link" storage (local-disk driver) — encrypted blobs + metadata
+app/src/data/transfers/
+
+# VCPeer Clips "Record & share" storage (local-disk driver) — encrypted blobs + metadata
+app/src/data/clips/
+docker-push.sh
+docker-compose.yml
+turnserver.conf
+output
+env.txt
+
+.idea
+
+# VCPeer deploy secrets (never commit)
+deploy/.env.insights
+deploy/.env.production
+
+# Launchboard submissions and Notify signups (real user data, never commit or
+# let a redeploy overwrite them — see deploy/README.md)
+app/data/launchboard.json
+app/data/notify.json
+
+# Room Link email->room-link captures (real user data, same reasoning as above)
+app/data/room-links.json
+
+# Durable named room claims (room name -> salted passcode hash; never commit
+# or let a redeploy overwrite them, same reasoning as above)
+app/data/room-claims.json
+
+# Meeting Notes — persisted caption/Whisper transcripts + AI summaries (real
+# user data, same reasoning as above)
+app/data/meeting-notes.json
+
+# Schedule — scheduled meetings (title/description/start time, real user
+# data, same reasoning as above)
+app/data/schedule.json
+
+# VCPeer Coworker conversation threads (real user data, never commit or let a
+# redeploy overwrite them — see deploy/README.md)
+app/data/coworker/

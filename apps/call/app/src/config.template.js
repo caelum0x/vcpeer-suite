@@ -1,0 +1,824 @@
+'use strict';
+
+/**
+ * ==============================================
+ * MiroTalk P2P v.2.1.49 - Configuration File
+ * ==============================================
+ *
+ * This file is the central configuration source.
+ * All environment variables are read here so the
+ * rest of the codebase imports config values
+ * instead of reading process.env directly.
+ *
+ * Setup:
+ *   cp app/src/config.template.js app/src/config.js
+ *   Then edit config.js to match your environment.
+ *
+ * Docker/container environments inject values via
+ * environment variables which are read at startup.
+ *
+ * Branding and customizations require a license:
+ * https://codecanyon.net/item/mirotalk-p2p-webrtc-realtime-video-conferences/38376661
+ */
+
+require('dotenv').config();
+
+const path = require('path');
+
+const packageJson = require('../../package.json');
+
+// Helper: parse env string to boolean
+function getEnvBoolean(key, force_true_if_undefined = false) {
+    if (key == undefined && force_true_if_undefined) return true;
+    return key == 'true' ? true : false;
+}
+
+// Helper: safely parse JSON env vars with a fallback
+function parseJsonEnv(envValue, fallback) {
+    if (!envValue) return fallback;
+    try {
+        return JSON.parse(envValue);
+    } catch (e) {
+        return fallback;
+    }
+}
+
+const port = process.env.PORT || 3000;
+
+module.exports = {
+    // ==========================================
+    // Server
+    // ==========================================
+    server: {
+        port: port,
+        host: process.env.HOST || `http://localhost:${port}`,
+        environment: process.env.NODE_ENV || 'development',
+        trustProxy: !!getEnvBoolean(process.env.TRUST_PROXY),
+
+        /**
+         * Embed (iframe) Restrictions
+         * ---------------------------
+         * Controls which origins are allowed to embed MiroTalk P2P in an <iframe>
+         * via the HTTP `Content-Security-Policy: frame-ancestors` header
+         * (also mirrored to `X-Frame-Options` when possible for legacy browsers).
+         *
+         * Behavior:
+         * - Empty / unset  → header NOT set, embedding allowed anywhere (default).
+         * - 'none'         → block ALL embedding (frame-ancestors 'none' + X-Frame-Options: DENY).
+         * - 'self'         → only same-origin embedding (frame-ancestors 'self' + X-Frame-Options: SAMEORIGIN).
+         * - list           → comma-separated origins, 'self' is always implicitly included.
+         *                    Wildcards like https://*.example.com are valid in CSP.
+         *
+         * IMPORTANT: This affects the widget too — the MiroTalk widget embeds
+         * the room in an iframe on the host site, so every site that should
+         * load the widget must be listed here.
+         */
+        embed: {
+            allowedOrigins: process.env.ALLOWED_EMBED_ORIGINS
+                ? process.env.ALLOWED_EMBED_ORIGINS.split(',')
+                      .map((o) => o.trim())
+                      .filter(Boolean)
+                : [],
+        },
+    },
+
+    // ==========================================
+    // CORS
+    // ==========================================
+    cors: {
+        origin: parseJsonEnv(process.env.CORS_ORIGIN, '*'),
+        methods: parseJsonEnv(process.env.CORS_METHODS, ['GET', 'POST']),
+    },
+
+    // ==========================================
+    // Host Protection
+    // ==========================================
+    host: {
+        protected: getEnvBoolean(process.env.HOST_PROTECTED),
+        userAuth: getEnvBoolean(process.env.HOST_USER_AUTH),
+        // HOST_USERS passwords must contain between 1 and 36 characters.
+        // Empty by default: a shipped username/password is a public credential, set your own.
+        users: parseJsonEnv(process.env.HOST_USERS, []),
+        maxLoginAttempts: process.env.HOST_MAX_LOGIN_ATTEMPTS || 5,
+        minLoginBlockTime: process.env.HOST_MIN_LOGIN_BLOCK_TIME || 15, // in minutes
+        // /createRoomToken rate limit (per IP)
+        createRoomTokenMaxRequests: parseInt(process.env.CREATE_ROOM_TOKEN_RATE_LIMIT_MAX) || 10,
+        createRoomTokenWindowMinutes: parseInt(process.env.CREATE_ROOM_TOKEN_RATE_LIMIT_WINDOW_MINUTES) || 1,
+        maxRoomParticipants: parseInt(process.env.ROOM_MAX_PARTICIPANTS) || 1000,
+        showActiveRooms: getEnvBoolean(process.env.SHOW_ACTIVE_ROOMS) || false,
+    },
+
+    // ==========================================
+    // JWT
+    // ==========================================
+    jwt: {
+        key: process.env.JWT_KEY, // Required: min 32 chars (openssl rand -hex 32), server won't start without it
+        exp: process.env.JWT_EXP || '1h',
+    },
+
+    // ==========================================
+    // Presenters
+    // ==========================================
+    // WARNING: without host protection / user auth, the peer name is unverified client input,
+    // so each entry acts as a shared secret. Use unique, non-guessable values (never a real
+    // name or email) or anyone who guesses it becomes presenter. Empty by default: a shipped
+    // name is a public credential.
+    presenters: parseJsonEnv(process.env.PRESENTERS, []),
+
+    // ==========================================
+    // API
+    // ==========================================
+    api: {
+        keySecret: process.env.API_KEY_SECRET,
+        disabled: parseJsonEnv(process.env.API_DISABLED, ['token', 'meetings']),
+    },
+
+    // ==========================================
+    // Ngrok
+    // ==========================================
+    ngrok: {
+        enabled: getEnvBoolean(process.env.NGROK_ENABLED),
+        authToken: process.env.NGROK_AUTH_TOKEN,
+    },
+
+    // ==========================================
+    // WebRTC ICE Servers
+    // ==========================================
+    webrtc: {
+        stun: {
+            enabled: getEnvBoolean(process.env.STUN_SERVER_ENABLED),
+            url: process.env.STUN_SERVER_URL,
+        },
+        turn: {
+            enabled: getEnvBoolean(process.env.TURN_SERVER_ENABLED),
+            url: process.env.TURN_SERVER_URL,
+            username: process.env.TURN_SERVER_USERNAME,
+            credential: process.env.TURN_SERVER_CREDENTIAL,
+        },
+    },
+
+    // ==========================================
+    // IP Lookup
+    // ==========================================
+    ipLookup: {
+        enabled: getEnvBoolean(process.env.IP_LOOKUP_ENABLED),
+    },
+
+    // ==========================================
+    // Survey
+    // ==========================================
+    survey: {
+        enabled: getEnvBoolean(process.env.SURVEY_ENABLED),
+        url: process.env.SURVEY_URL || 'https://www.questionpro.com/t/AUs7VZq00L',
+    },
+
+    // ==========================================
+    // Redirect
+    // ==========================================
+    redirect: {
+        enabled: getEnvBoolean(process.env.REDIRECT_ENABLED),
+        url: process.env.REDIRECT_URL || '/newcall',
+    },
+
+    // ==========================================
+    // Sentry
+    // ==========================================
+    sentry: {
+        enabled: getEnvBoolean(process.env.SENTRY_ENABLED),
+        dsn: process.env.SENTRY_DSN,
+        tracesSampleRate: parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE || '0.0'),
+        logLevels: process.env.SENTRY_LOG_LEVELS
+            ? process.env.SENTRY_LOG_LEVELS.split(',').map((level) => level.trim())
+            : ['error'],
+    },
+
+    // ==========================================
+    // Slack
+    // ==========================================
+    slack: {
+        enabled: getEnvBoolean(process.env.SLACK_ENABLED),
+        signingSecret: process.env.SLACK_SIGNING_SECRET,
+    },
+
+    // ==========================================
+    // ChatGPT / OpenAI — the in-call "VCPeer Coworker" assistant
+    // ==========================================
+    // Enabled by default (unlike upstream) and defaults its endpoint to
+    // VCPeer's own free, OpenAI-compatible AI relay (ai-relay-worker, see
+    // app/src/coworker/coworkerClient.js) instead of requiring a paid
+    // OPENAI_APIKEY. Set CHATGPT_BASE_PATH/CHATGPT_APIKEY to point this at a
+    // real OpenAI/Anthropic-compatible account instead.
+    chatGPT: {
+        enabled: getEnvBoolean(process.env.CHATGPT_ENABLED, true),
+        basePath:
+            process.env.CHATGPT_BASE_PATH ||
+            process.env.AI_RELAY_BASE_URL ||
+            'https://ai-relay.subasiarhan3.workers.dev/v1/',
+        apiKey: process.env.CHATGPT_APIKEY || process.env.AI_RELAY_KEY || '',
+        model: process.env.CHATGPT_MODEL || 'vcpeer-coworker',
+        max_tokens: parseInt(process.env.CHATGPT_MAX_TOKENS) || 800,
+        temperature: parseFloat(process.env.CHATGPT_TEMPERATURE) || 0.4,
+    },
+
+    // ==========================================
+    // VCPeer Coworker — async text follow-up + Slack bridge
+    // ==========================================
+    // The same "VCPeer Coworker" assistant that joins a call (config.chatGPT
+    // above) is also reachable as a standalone conversation thread (the
+    // `/coworker` page + `/api/v1/coworker` routes, for following up after a
+    // call ends) and, optionally, from Slack. All three surfaces share one
+    // persona and, by default, the same free relay backend — see
+    // app/src/coworker/.
+    coworker: {
+        enabled: getEnvBoolean(process.env.COWORKER_ENABLED, true),
+        name: process.env.COWORKER_NAME || 'VCPeer Coworker',
+        systemPrompt:
+            process.env.COWORKER_SYSTEM_PROMPT ||
+            'You are VCPeer Coworker, an always-on assistant built into VCPeer ' +
+                '(video calls, Live streaming, scheduling, and VCPeer Send file sharing). ' +
+                'Help the user with questions about their call, their work, or VCPeer itself. ' +
+                'Be concise and concrete. You do not have access to the live call audio/video, ' +
+                'only to the text conversation you are shown.',
+        baseUrl:
+            process.env.COWORKER_BASE_URL ||
+            process.env.AI_RELAY_BASE_URL ||
+            'https://ai-relay.subasiarhan3.workers.dev/v1/chat/completions',
+        apiKey: process.env.COWORKER_API_KEY || process.env.AI_RELAY_KEY || '',
+        model: process.env.COWORKER_MODEL || 'vcpeer-coworker',
+        maxTokens: parseInt(process.env.COWORKER_MAX_TOKENS) || 800,
+        temperature: parseFloat(process.env.COWORKER_TEMPERATURE) || 0.4,
+        dataDir: process.env.COWORKER_DATA_DIR || path.join(__dirname, '../data', 'coworker'),
+        maxThreads: parseInt(process.env.COWORKER_MAX_THREADS) || 20000,
+        maxMessagesPerThread: parseInt(process.env.COWORKER_MAX_MESSAGES_PER_THREAD) || 60,
+        // Slack bridge — "mention VCPeer Coworker in Slack, keep the thread going".
+        // Requires a real Slack app (owner-only setup, see deploy/README.md):
+        //   1. Create a Slack app at https://api.slack.com/apps, enable Event
+        //      Subscriptions with Request URL https://<your-domain>/api/v1/coworker/slack/events
+        //      and subscribe to `app_mention` and `message.im`.
+        //   2. Add the `chat:write` bot scope, install the app to the workspace.
+        //   3. Copy the Signing Secret to COWORKER_SLACK_SIGNING_SECRET and the
+        //      Bot User OAuth Token (xoxb-...) to COWORKER_SLACK_BOT_TOKEN.
+        slack: {
+            enabled: getEnvBoolean(process.env.COWORKER_SLACK_ENABLED),
+            signingSecret: process.env.COWORKER_SLACK_SIGNING_SECRET || '',
+            botToken: process.env.COWORKER_SLACK_BOT_TOKEN || '',
+        },
+    },
+
+    // ==========================================
+    // Whisper Speech-to-Text (server-side transcription)
+    // ==========================================
+    // Server-side audio transcription using an OpenAI-compatible Whisper
+    // endpoint. Works with the official OpenAI API or any self-hosted,
+    // OpenAI-compatible server (whisper.cpp server, faster-whisper, etc.).
+    //
+    // IMPORTANT: Whisper is a side-channel only. The browser records short
+    // audio segments from a SECONDARY copy of the local microphone stream and
+    // sends them here for transcription. It NEVER sits in the WebRTC media
+    // path: the RTCPeerConnection audio track is untouched and keeps the
+    // lowest possible latency. The resulting text is distributed to peers over
+    // the existing WebRTC DataChannel, not through this server.
+    //
+    // - enabled        : Enable/disable Whisper transcription [true/false] (default: false)
+    // - basePath       : OpenAI-compatible API endpoint (default: 'https://api.openai.com/v1/')
+    //                    For a self-hosted server use e.g. 'http://localhost:8000/v1/'
+    // - apiKey         : API secret key (ALWAYS store in .env, never sent to the browser).
+    //                    May be empty for self-hosted servers that don't require auth.
+    // - model          : Whisper model name (default: 'whisper-1')
+    // - language       : Optional ISO-639-1 language hint (e.g. 'en'). Empty = auto-detect.
+    // - segmentSeconds : Length of each recorded audio segment sent for transcription (default: 3)
+    // - maxAudioBytes  : Reject audio segments larger than this (default: 25MB)
+    whisper: {
+        enabled: getEnvBoolean(process.env.WHISPER_ENABLED),
+        basePath: process.env.WHISPER_BASE_PATH || 'https://api.openai.com/v1/',
+        apiKey: process.env.WHISPER_API_KEY || '',
+        model: process.env.WHISPER_MODEL || 'whisper-1',
+        language: process.env.WHISPER_LANGUAGE || '',
+        segmentSeconds: parseInt(process.env.WHISPER_SEGMENT_SECONDS) || 3,
+        maxAudioBytes: parseInt(process.env.WHISPER_MAX_AUDIO_BYTES) || 25 * 1024 * 1024,
+    },
+
+    // ==========================================
+    // IP Whitelist
+    // ==========================================
+    ipWhitelist: {
+        enabled: getEnvBoolean(process.env.IP_WHITELIST_ENABLED),
+        allowed: parseJsonEnv(process.env.IP_WHITELIST_ALLOWED, []),
+    },
+
+    // ==========================================
+    // OIDC - OpenID Connect
+    // ==========================================
+    oidc: {
+        enabled: process.env.OIDC_ENABLED ? getEnvBoolean(process.env.OIDC_ENABLED) : false,
+        allowRoomCreationForAuthUsers: process.env.OIDC_ALLOW_ROOMS_CREATION_FOR_AUTH_USERS
+            ? getEnvBoolean(process.env.OIDC_ALLOW_ROOMS_CREATION_FOR_AUTH_USERS)
+            : false,
+        // Authenticated OIDC users join with the name verified by the identity provider and cannot change it
+        lockUsername: process.env.OIDC_LOCK_USERNAME ? getEnvBoolean(process.env.OIDC_LOCK_USERNAME) : true,
+        baseUrlDynamic: process.env.OIDC_BASE_URL_DYNAMIC ? getEnvBoolean(process.env.OIDC_BASE_URL_DYNAMIC) : false,
+        /*
+         * When `baseUrlDynamic` is true, the OIDC baseURL (and therefore the redirect_uri
+         * sent to the IdP) is derived from the incoming `Host` header. To prevent
+         * Host-header injection from redirecting authorization codes to an attacker,
+         * list every origin the server is allowed to serve here (full origin, no path).
+         * The static `config.baseURL` is always trusted and does not need to be repeated.
+         * Example: ['https://p2p.mirotalk.com', 'https://meet.example.com']
+         */
+        allowedDynamicBaseURLs: process.env.OIDC_ALLOWED_DYNAMIC_BASE_URLS
+            ? process.env.OIDC_ALLOWED_DYNAMIC_BASE_URLS.split(',')
+                  .map((u) => u.trim())
+                  .filter(Boolean)
+            : [],
+        config: {
+            issuerBaseURL: process.env.OIDC_ISSUER_BASE_URL,
+            clientID: process.env.OIDC_CLIENT_ID,
+            clientSecret: process.env.OIDC_CLIENT_SECRET,
+            baseURL: process.env.OIDC_BASE_URL,
+            secret: process.env.SESSION_SECRET,
+            authorizationParams: {
+                response_type: 'code',
+                scope: 'openid profile email',
+            },
+            authRequired: process.env.OIDC_AUTH_REQUIRED ? getEnvBoolean(process.env.OIDC_AUTH_REQUIRED) : false,
+            auth0Logout: process.env.OIDC_AUTH_LOGOUT ? getEnvBoolean(process.env.OIDC_AUTH_LOGOUT) : true,
+            routes: {
+                callback: '/auth/callback',
+                login: false,
+                logout: '/logout',
+            },
+        },
+    },
+
+    // ==========================================
+    // Mattermost
+    // ==========================================
+    mattermost: {
+        enabled: getEnvBoolean(process.env.MATTERMOST_ENABLED),
+        serverUrl: process.env.MATTERMOST_SERVER_URL,
+        username: process.env.MATTERMOST_USERNAME,
+        password: process.env.MATTERMOST_PASSWORD,
+        token: process.env.MATTERMOST_TOKEN,
+        roomTokenExpire: process.env.MATTERMOST_ROOM_TOKEN_EXPIRE,
+    },
+
+    // ==========================================
+    // Stats / Analytics
+    // ==========================================
+    // Disabled by default: the upstream default silently sends every room/call
+    // event to the upstream author's own stats.mirotalk.com instance under a
+    // shared public ID, which contradicts VCPeer's "we don't collect or share
+    // personal information" privacy claim. VCPeer's own analytics (room_created
+    // event, rooms-per-day metric) go through Railyard Insights instead — see
+    // public/js/insights.js and the room_created hook in public/js/client.js.
+    stats: {
+        enabled: process.env.STATS_ENABLED ? getEnvBoolean(process.env.STATS_ENABLED) : false,
+        src: process.env.STATS_SCR || '',
+        id: process.env.STATS_ID || '',
+    },
+
+    // ==========================================
+    // Email
+    // ==========================================
+    email: {
+        alert: process.env.EMAIL_ALERT === 'true' || false,
+        host: process.env.EMAIL_HOST,
+        port: Number(process.env.EMAIL_PORT),
+        username: process.env.EMAIL_USERNAME,
+        password: process.env.EMAIL_PASSWORD,
+        from: process.env.EMAIL_FROM || process.env.EMAIL_USERNAME,
+        sendTo: process.env.EMAIL_SEND_TO,
+        https: process.env.HTTPS === 'true' || false,
+        serverPort: process.env.PORT || 3000,
+    },
+
+    // ==========================================
+    // Branding (UI customizations)
+    // ==========================================
+    brand: {
+        htmlInjection: true,
+        app: {
+            language: 'en', // https://en.wikipedia.org/wiki/List_of_ISO_639_language_codes
+            translationMode: 'google', // In-room UI: auto (native file else Google) | native (human files only, no Google) | google (default, always Google)
+            name: 'VCPeer',
+            title: '<h1>VCPeer</h1>Free browser video calls. No signup, no download, no time limit.',
+            description:
+                'Start a video call in one click. No account, no download, no time limit. Calls are peer-to-peer and never recorded by us.',
+            joinDescription: 'Pick a room name.<br />How about this one?',
+            joinButtonLabel: 'JOIN ROOM',
+            customizeRoomButtonLabel: 'CUSTOMIZE ROOM',
+            joinLastLabel: 'Your recent room:',
+        },
+        og: {
+            type: 'app-webrtc',
+            siteName: 'VCPeer',
+            title: 'VCPeer — Free P2P Video Calls, No Signup, No Time Limit',
+            description:
+                'Free, peer-to-peer video calls in your browser. No account, no download, no time limit. Screen share, chat, and whiteboard built in.',
+            image: 'https://vcpeer.com/images/preview.png',
+            url: 'https://vcpeer.com',
+        },
+        site: {
+            shortcutIcon: '../images/logo.svg',
+            // iOS/iPadOS Safari's "Add to Home Screen" ignores SVG for apple-touch-icon
+            // (PNG/JPEG only per Apple's spec) and silently falls back to a blank/generic
+            // tile — so this must stay a raster PNG, unlike shortcutIcon above which SVG
+            // favicons work fine for in every modern desktop browser.
+            appleTouchIcon: '../images/apple-touch-icon.png',
+            landingTitle: 'VCPeer — Free P2P Video Calls, No Signup, No Time Limit',
+            newCallTitle: 'VCPeer a Free Secure Video Calls, Chat & Screen Sharing.',
+            newCallRoomTitle: 'Pick name. <br />Share URL. <br />Start conference.',
+            newCallRoomDescription:
+                "Each room has its disposable URL. Just pick a room name and share your custom URL. It's that easy.",
+            loginTitle: 'VCPeer - Host Protected login required.',
+            loginHeading: 'Welcome back',
+            loginDescription: 'Enter your credentials to continue.',
+            loginButtonLabel: 'Login',
+            joinRoomTitle: 'Pick name.<br />Share URL.<br />Start conference.',
+            joinRoomButtonLabel: 'JOIN ROOM',
+            clientTitle: 'VCPeer WebRTC Video call, Chat Room & Screen Sharing.',
+            privacyPolicyTitle: 'VCPeer - privacy and policy.',
+            stunTurnTitle: 'Test Stun/Turn Servers.',
+            notFoundTitle: 'VCPeer - 404 Page not found.',
+            waitingRoomTitle: 'VCPeer - Waiting for host to start the meeting',
+            waitingRoomHeading: 'Waiting for host...',
+            waitingRoomDescription:
+                "The meeting hasn't started yet.<br />You'll join automatically when the host opens the room.",
+            waitingRoomStatus: 'Checking room status...',
+            waitingRoomReady: 'Room is ready! Joining...',
+            waitingRoomWaiting: 'Waiting for host to start the meeting...',
+            waitingRoomHostLink: 'Are you the host?',
+            waitingRoomLoginLink: 'Login here',
+            waitingRoomElapsedJust: 'Just started waiting',
+            waitingRoomElapsedMinutes: 'Waiting for {minutes}',
+            waitingRoomSongUrl: '../sounds/waiting-music.mp3',
+        },
+        html: {
+            topSponsors: false,
+            features: true,
+            teams: true, // please keep me always true ;)
+            tryEasier: true,
+            poweredBy: false,
+            sponsors: false,
+            pastSponsors: false,
+            advertisers: false,
+            supportUs: false,
+            footer: true,
+        },
+        about: {
+            imageUrl: '../images/mirotalk-logo.gif',
+            title: `VCPeer v1.0.0`,
+            html: `
+                <div class="about-content">
+                    <p class="about-description">
+                        Free, peer-to-peer video calls directly in your browser.
+                    </p>
+                    <a
+                        class="about-primary-action"
+                        data-umami-event="About button"
+                        href="https://vcpeer.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        <i class="fas fa-info-circle" aria-hidden="true"></i>
+                        <span>About</span>
+                    </a>
+                    <dl class="about-details">
+                        <div>
+                            <dt>Author</dt>
+                            <dd>
+                                <a
+                                    id="linkedin-button"
+                                    data-umami-event="Author link"
+                                    href="https://vcpeer.com"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >VCPeer</a>
+                            </dd>
+                        </div>
+                        <div>
+                            <dt>Email</dt>
+                            <dd>
+                                <a
+                                    id="email-button"
+                                    data-umami-event="Email button"
+                                    href="mailto:hello@vcpeer.com?subject=VCPeer info"
+                                >hello@vcpeer.com</a>
+                            </dd>
+                        </div>
+                        <div>
+                            <dt>Source code</dt>
+                            <dd>
+                                <a
+                                    id="source-code-button"
+                                    data-umami-event="Source code link"
+                                    href="https://github.com/caelum0x/vcpeer-mirotalk"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >github.com/caelum0x/vcpeer-mirotalk</a>
+                            </dd>
+                        </div>
+                    </dl>
+                    <footer class="about-footer">
+                        &copy; ${new Date().getFullYear()} VCPeer. All rights reserved.
+                    </footer>
+                </div>
+            `,
+        },
+        // https://docs.mirotalk.com/mirotalk-p2p/integration/#widgets-integration
+        widget: {
+            enabled: false,
+            roomId: 'support-room',
+            theme: 'dark',
+            widgetState: 'minimized',
+            widgetType: 'support',
+            supportWidget: {
+                position: 'top-right',
+                expertImages: [
+                    'https://photo.cloudron.pocketsolution.net/uploads/original/95/7d/a5f7f7a2c89a5fee7affda5f013c.jpeg',
+                ],
+                buttons: {
+                    audio: true,
+                    video: true,
+                    screen: true,
+                    chat: true,
+                    join: true,
+                },
+                checkOnlineStatus: false,
+                isOnline: true,
+                customMessages: {
+                    heading: 'Need Help?',
+                    subheading: 'Get instant support from our expert team!',
+                    connectText: 'connect in < 5 seconds',
+                    onlineText: 'We are online',
+                    offlineText: 'We are offline',
+                    poweredBy: 'Powered by VCPeer',
+                },
+            },
+        },
+        //...
+    },
+    // ==========================================
+    // Themes
+    // ==========================================
+    /**
+     * Theme definitions — CSS custom properties for each theme.
+     * Admins can override individual themes or add new ones.
+     * The client merges these with built-in defaults, so you
+     * only need to specify the properties you want to change.
+     * Dialog actions use --room-switch-accent / --dd-color and --select-bg.
+     * Override --swal-confirm-bg and --swal-neutral-bg to customize them.
+     * Button text contrast is selected automatically; destructive actions stay red.
+     * Join meeting uses a darker accent with white text. --swal-join-bg and
+     * --swal-join-hover-bg overrides are darkened if needed for text contrast.
+     */
+    themes: {
+        /* Example: override dark theme background
+        dark: {
+            '--body-bg': 'radial-gradient(#1a1a2e, #0a0a14)',
+            '--msger-bg': 'radial-gradient(#1a1a2e, #0a0a14)',
+        },
+        */
+        /* Example: add a custom theme
+        ocean: {
+            '--body-bg': 'radial-gradient(#0d2137, #061220)',
+            '--msger-bg': 'radial-gradient(#0d2137, #061220)',
+            '--msger-private-bg': 'radial-gradient(#0d2137, #061220)',
+            '--wb-bg': 'radial-gradient(#0d2137, #061220)',
+            '--elem-border-color': '1px solid rgba(56, 189, 248, 0.15)',
+            '--navbar-bg': 'rgba(6, 18, 32, 0.88)',
+            '--select-bg': '#0f2a45',
+            '--tab-btn-active': '#163d5e',
+            '--box-shadow': '0px 4px 12px 0px rgba(0, 0, 0, 0.5)',
+            '--left-msg-bg': '#112d4a',
+            '--right-msg-bg': '#0a1f35',
+            '--private-msg-bg': '#0e2540',
+            '--btn-bar-bg-color': '#E0F2FE',
+            '--btn-bar-color': '#061220',
+            '--btns-bg-color': 'rgba(6, 18, 32, 0.75)',
+            '--dd-color': '#38BDF8',
+        },
+        */
+    },
+    /**
+     * Configuration for controlling the visibility of buttons in the MiroTalk P2P client.
+     * Set properties to true to show the corresponding buttons, or false to hide them.
+     * captionBtn, showSwapCameraBtn, showScreenShareBtn, showFullScreenBtn, showVideoPipBtn, showDocumentPipBtn -> (auto-detected).
+     */
+    buttons: {
+        main: {
+            showAudioBtn: true,
+            showVideoBtn: true,
+            showScreenBtn: true, // autodetected
+            showMyHandBtn: true,
+            showChatRoomBtn: true,
+            showParticipantsBtn: true,
+            showMySettingsBtn: true,
+            showExtraBtn: true,
+            showShareQr: true,
+            showShareRoomBtn: true, // For guests
+            showHideMeBtn: true,
+            showRecordStreamBtn: true,
+            showFullScreenBtn: true,
+            showRoomEmojiPickerBtn: true,
+            showCaptionRoomBtn: true,
+            showWhiteboardBtn: true,
+            showSnapshotRoomBtn: true,
+            showFileShareBtn: true,
+            showSendLargeFileBtn: true,
+            showScheduleFollowupBtn: true,
+            showDocumentPipBtn: true,
+            showAboutBtn: true, // Please keep me always true, Thank you!
+        },
+        chat: {
+            showTogglePinBtn: true,
+            showMaxBtn: true,
+            showSaveMessageBtn: true,
+            showMarkDownBtn: true,
+            showChatGPTBtn: getEnvBoolean(process.env.CHATGPT_ENABLED, true),
+            showFileShareBtn: true,
+            showShareVideoAudioBtn: true,
+            showParticipantsBtn: true,
+        },
+        caption: {
+            showTogglePinBtn: true,
+            showMaxBtn: true,
+        },
+        settings: {
+            showActiveRoomsBtn: true,
+            showMicOptionsBtn: true,
+            showTabRoomPeerName: true,
+            showTabRoomParticipants: true,
+            showTabRoomSecurity: true,
+            showTabEmailInvitation: true,
+            showCaptionEveryoneBtn: true,
+            showMuteEveryoneBtn: true,
+            showHideEveryoneBtn: true,
+            showEjectEveryoneBtn: true,
+            showLockRoomBtn: true,
+            showUnlockRoomBtn: true,
+            showJoinLockBtn: true,
+            showShortcutsBtn: true,
+            customNoiseSuppression: getEnvBoolean(process.env.CUSTOM_NOISE_SUPPRESSION_ENABLED, true),
+        },
+        remote: {
+            showAudioVolume: true,
+            audioBtnClickAllowed: true,
+            videoBtnClickAllowed: true,
+            showVideoPipBtn: true,
+            showKickOutBtn: true,
+            showSnapShotBtn: true,
+            showFileShareBtn: true,
+            showShareVideoAudioBtn: true,
+            showGeoLocationBtn: true,
+            showPrivateMessageBtn: true,
+            showZoomInOutBtn: false,
+            showVideoFocusBtn: true,
+        },
+        local: {
+            showVideoPipBtn: true,
+            showSnapShotBtn: true,
+            showVideoCircleBtn: true,
+            showZoomInOutBtn: false,
+            showVideoFocusBtn: true,
+        },
+        whiteboard: {
+            whiteboardLockBtn: false,
+        },
+    },
+    // ==========================================
+    // Webhook
+    // ==========================================
+    webhook: {
+        enabled: false, // Enable webhook functionality
+        url: 'http://localhost:8888/webhook-endpoint', // Webhook server URL
+    },
+
+    // ==========================================
+    // VCPeer Send — "Send a link" (WeTransfer-style upload-and-share)
+    // ==========================================
+    // Files are uploaded in chunks, encrypted at rest with a server-managed
+    // AES-256-GCM key (NOT end-to-end: the server can decrypt to build zips and
+    // previews — see public/views/send.html FAQ, which states this honestly).
+    // The live P2P "Send now" mode is unaffected and still never touches the
+    // server at all.
+    transfers: {
+        // 'local' writes to disk at dataDir. 'r2' uses a Cloudflare R2 (S3-compatible)
+        // bucket — see the r2.* keys below.
+        storageDriver: process.env.SEND_LINK_STORAGE_DRIVER || 'local',
+        dataDir: process.env.SEND_LINK_DATA_DIR || path.join(__dirname, 'data', 'transfers'),
+        chunkBytes: Number(process.env.SEND_LINK_CHUNK_BYTES) || 8 * 1024 * 1024, // 8 MiB
+        maxTransferBytes: Number(process.env.SEND_LINK_MAX_TRANSFER_BYTES) || 2 * 1024 * 1024 * 1024, // 2 GiB default cap
+        dailyIpQuotaBytes: Number(process.env.SEND_LINK_DAILY_IP_QUOTA_BYTES) || 10 * 1024 * 1024 * 1024, // 10 GiB/day/IP
+        dailyEmailSendLimit: Number(process.env.SEND_LINK_DAILY_EMAIL_LIMIT) || 20, // transfers/day per verified sender email
+        defaultExpiryDays: Number(process.env.SEND_LINK_DEFAULT_EXPIRY_DAYS) || 7,
+        allowedExpiryDays: [1, 3, 7],
+        previewMaxBytes: Number(process.env.SEND_LINK_PREVIEW_MAX_BYTES) || 50 * 1024 * 1024, // 50 MiB cheap-preview cap
+        cleanupIntervalMs: Number(process.env.SEND_LINK_CLEANUP_INTERVAL_MS) || 15 * 60 * 1000,
+        emailVerifyCodeTtlMs: Number(process.env.SEND_LINK_EMAIL_VERIFY_TTL_MS) || 10 * 60 * 1000,
+        r2: {
+            accountId: process.env.R2_ACCOUNT_ID || '',
+            accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
+            secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
+            bucket: process.env.R2_BUCKET || '',
+            // Optional override; default is derived from accountId as
+            // `https://<accountId>.r2.cloudflarestorage.com`.
+            endpoint: process.env.R2_ENDPOINT || '',
+            region: process.env.R2_REGION || 'auto',
+        },
+    },
+
+    // ==========================================
+    // VCPeer Clips — "Record & share" (Loom-style async recording)
+    // ==========================================
+    // Record once (solo or with others, from the in-room recording button),
+    // upload, get a shareable /watch/:id link — the viewer plays it back
+    // whenever they want, no call, no signup. Encrypted at rest with a
+    // server-managed AES-256-GCM key, same model as VCPeer Send above (NOT
+    // end-to-end — the server can decrypt to serve video/range requests).
+    clips: {
+        storageDriver: process.env.CLIPS_STORAGE_DRIVER || 'local',
+        dataDir: process.env.CLIPS_DATA_DIR || path.join(__dirname, 'data', 'clips'),
+        chunkBytes: Number(process.env.CLIPS_CHUNK_BYTES) || 4 * 1024 * 1024, // 4 MiB
+        maxClipBytes: Number(process.env.CLIPS_MAX_BYTES) || 1 * 1024 * 1024 * 1024, // 1 GiB cap per recording
+        dailyIpQuotaBytes: Number(process.env.CLIPS_DAILY_IP_QUOTA_BYTES) || 5 * 1024 * 1024 * 1024, // 5 GiB/day/IP
+        defaultExpiryDays: Number(process.env.CLIPS_DEFAULT_EXPIRY_DAYS) || 30,
+        cleanupIntervalMs: Number(process.env.CLIPS_CLEANUP_INTERVAL_MS) || 15 * 60 * 1000,
+        r2: {
+            // Reuses the same R2 bucket/credentials as VCPeer Send when set — no
+            // need to provision a second bucket just for clips.
+            accountId: process.env.R2_ACCOUNT_ID || '',
+            accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
+            secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
+            bucket: process.env.CLIPS_R2_BUCKET || process.env.R2_BUCKET || '',
+            endpoint: process.env.R2_ENDPOINT || '',
+            region: process.env.R2_REGION || 'auto',
+        },
+    },
+
+    // ==========================================
+    // Mail (Scribase Mail / Resend-compatible API)
+    // ==========================================
+    // Used only by VCPeer Send's "Send by email" delivery mode and sender-email
+    // verification codes. If apiUrl/apiKey are unset, email sending fails soft
+    // (the UI falls back to "Get a link" — see app/src/lib/mailClient.js).
+    mail: {
+        apiUrl: process.env.MAIL_API_URL || '',
+        apiKey: process.env.MAIL_API_KEY || '',
+        from: process.env.MAIL_FROM || 'VCPeer <send@vcpeer.com>',
+    },
+
+    // ==========================================
+    // Meeting Notes — persisted Whisper/live-caption transcript + an
+    // AI-generated summary and action-item list, surfaced at /notes/:id.
+    // ==========================================
+    // The caption/Whisper transcript (app/src/server.js `caption` /
+    // `getWhisperTranscription`) only ever lived in each peer's own browser
+    // tab, over the WebRTC DataChannel — once every tab closed, it was gone.
+    // This persists an opt-in snapshot of that transcript server-side (same
+    // on-disk-JSON-file convention as notify.js/roomLink.js — no database in
+    // this fork) and, when config.chatGPT is enabled, asks the same
+    // OpenAI-compatible relay already wired for VCPeer Coworker to produce a
+    // short summary + action items. The raw transcript is always saved even
+    // if the summary step is disabled/unavailable/fails.
+    meetingNotes: {
+        dataDir: process.env.MEETING_NOTES_DATA_DIR || path.join(__dirname, '../data'),
+        // Hard caps so one abusive submission can't blow up the data file or
+        // the summarization prompt — generous enough for a real multi-hour
+        // call's worth of captions.
+        maxEntries: parseInt(process.env.MEETING_NOTES_MAX_ENTRIES) || 4000,
+        maxEntryChars: parseInt(process.env.MEETING_NOTES_MAX_ENTRY_CHARS) || 2000,
+        maxTotalChars: parseInt(process.env.MEETING_NOTES_MAX_TOTAL_CHARS) || 90000,
+        // Notes older than this are pruned the next time a new note is saved.
+        retentionDays: parseInt(process.env.MEETING_NOTES_RETENTION_DAYS) || 90,
+        maxRecords: parseInt(process.env.MEETING_NOTES_MAX_RECORDS) || 20000,
+        // Only this many of the most recent transcript lines are sent to the
+        // summarizer (the full transcript is still stored/displayed either way).
+        summaryMaxLines: parseInt(process.env.MEETING_NOTES_SUMMARY_MAX_LINES) || 400,
+    },
+
+    // ==========================================
+    // Schedule — same-origin /schedule create form + /schedule/:id view page
+    // + a downloadable .ics calendar file, see app/src/schedule.js.
+    // ==========================================
+    // Before this, "scheduling" a VCPeer call only opened the visitor's own
+    // mail client via a mailto: link (public/js/client.js shareRoomByEmail)
+    // — nothing persisted server-side and no calendar file was produced.
+    // Same on-disk-JSON-file convention as notify.js/roomLink.js/
+    // meetingNotes.js — no database in this fork.
+    schedule: {
+        dataDir: process.env.SCHEDULE_DATA_DIR || path.join(__dirname, '../data'),
+        maxRecords: parseInt(process.env.SCHEDULE_MAX_RECORDS) || 20000,
+        // Scheduled meetings are kept this many days after they end, so the
+        // /schedule/:id page and its .ics link both keep working for a
+        // reasonable look-back window even after the meeting has happened.
+        retentionDaysAfterMeeting: parseInt(process.env.SCHEDULE_RETENTION_DAYS_AFTER) || 60,
+        titleMaxChars: parseInt(process.env.SCHEDULE_TITLE_MAX_CHARS) || 200,
+        descriptionMaxChars: parseInt(process.env.SCHEDULE_DESCRIPTION_MAX_CHARS) || 2000,
+        organizerNameMaxChars: parseInt(process.env.SCHEDULE_ORGANIZER_NAME_MAX_CHARS) || 200,
+        minDurationMinutes: parseInt(process.env.SCHEDULE_MIN_DURATION_MINUTES) || 5,
+        maxDurationMinutes: parseInt(process.env.SCHEDULE_MAX_DURATION_MINUTES) || 480,
+        maxFutureDays: parseInt(process.env.SCHEDULE_MAX_FUTURE_DAYS) || 730,
+        pastGraceMinutes: parseInt(process.env.SCHEDULE_PAST_GRACE_MINUTES) || 5,
+    },
+};

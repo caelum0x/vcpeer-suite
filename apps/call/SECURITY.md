@@ -1,0 +1,31 @@
+# Security Policy
+
+## Reporting a Vulnerability
+
+If you have discovered a security issue in VCPeer itself, please report it privately through [GitHub Security Advisories](https://github.com/caelum0x/vcpeer-mirotalk/security/advisories/new). For issues in the upstream MiroTalk P2P codebase, also consider reporting to [the upstream project](https://github.com/miroslavpejic85/mirotalk/security/advisories/new).
+Please refrain from creating a public GitHub issue or disclosing the vulnerability publicly.
+We prefer a Coordinated Vulnerability Disclosure (CVD) to properly understand and fix the root cause problem.
+
+The advisory form guides you through the required details, so please describe the issue.
+
+A member of the security team will confirm the vulnerability, determine its impact, and develop a fix.
+The fix will be applied to the master branch, tested, and packaged in the next security release.
+
+Thanks in advance for your support to make our products safer!
+
+---
+
+## 🙏 Acknowledgements
+
+We would like to extend our gratitude to the following individuals for their responsible disclosure of security vulnerabilities:
+
+| Name                  | Contact                                                |
+| --------------------- | ------------------------------------------------------ |
+| `Vishal Shukla`       | [GitHub](https://github.com/shukla304)                 |
+| `Mutsumi Safe`        | [GitHub](https://github.com/nakasakisoyorin99-ship-it) |
+| `mansurmavlankulov`   | [GitHub](https://github.com/mansurmavlankulov)         |
+| `28Hus`               | [GitHub](https://github.com/28Hus)                     |
+| `xiaxiu555`           | [GitHub](https://github.com/xiaxiu555)                 |
+| `waterhunter2000-svg` | [GitHub](https://github.com/waterhunter2000-svg)       |
+
+Their dedication to security has contributed to the continuous improvement of our systems, ensuring the safety and privacy of our users and data.
