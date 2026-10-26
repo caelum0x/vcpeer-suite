@@ -1,0 +1,13 @@
+This repository is a monorepo containing four independent applications,
+each under its own license. There is no single license that applies
+to the repository as a whole — see the LICENSE file inside each app's
+folder:
+
+    apps/call/LICENSE   -> AGPL-3.0 (VCPeer Call, fork of MiroTalk P2P)
+    apps/share/LICENSE  -> BSD-2-Clause (VCPeer Send, fork of Pingvin Share X)
+    apps/book/LICENSE   -> MIT (VCPeer Book, fork of Cal.com / cal.diy)
+    apps/live/LICENSE   -> MIT (VCPeer Live)
+
+If you use, modify, or redistribute code from one of these apps, the
+license that applies is the one in that app's own folder, not this
+file. See README.md for details.

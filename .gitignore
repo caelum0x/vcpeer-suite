@@ -1,0 +1,9 @@
+# Never commit real secrets/env files at the root level.
+# Each app under apps/* has its own .gitignore for its own .env handling —
+# this root entry is defense-in-depth for anything created at the top level.
+.env
+.env.local
+.env.*.local
+!.env.example
+!.env.template
+.DS_Store
