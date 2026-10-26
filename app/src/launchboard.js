@@ -18,10 +18,11 @@ const log = new Logger('Launchboard');
  * disk-backed array instead of a Map, since listings must survive a restart
  * (unlike a 30-minute transfer code).
  *
- * The "Featured" tier is a real, working flag, but the $29/week payment is
- * not wired up yet: a submitter can only request it (featuredRequested),
- * never set `featured` directly. An operator flips `featured: true` by hand
- * in the data file until Dodo billing lands (see plans/vcpeer.md).
+ * The "Featured" tier is free (owner decision 2026-10-27: VCPeer has no
+ * paid tier anywhere). A submitter can only request it (featuredRequested),
+ * never set `featured` directly; an operator flips `featured: true` by hand
+ * in the data file - there was never any real billing wired up for this
+ * (see plans/vcpeer.md), and there won't be one now.
  *
  * LAUNCHBOARD_DATA_DIR lets production point this at a path that a redeploy
  * never overwrites (see deploy/README.md); defaults to app/data/ for local
