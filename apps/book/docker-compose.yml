@@ -1,0 +1,263 @@
+# VCPeer Book — Cal.com (cal.diy, MIT) community edition, branded for VCPeer.
+#
+# Local-only stack: Postgres + Cal.com web app + Mailpit (SMTP capture, local
+# verification only — production points EMAIL_SERVER_* at Scribase Mail).
+#
+# ARM64 note (read before you "docker compose up" on an Apple Silicon Mac or
+# an Oracle Ampere box): `calcom/cal.com:latest` on Docker Hub is amd64-only
+# (verified via `docker manifest inspect calcom/cal.com:latest` — single
+# platform manifest, architecture amd64). BUT Docker Hub also carries
+# per-release "-arm" tags built natively for arm64 — verified via the Docker
+# Hub tags API (`.../repositories/calcom/cal.com/tags/?ordering=last_updated`)
+# which lists `v6.2.0-arm` (architecture: arm64, pushed 2026-03-02) matching
+# `v6.2.0`/`latest` (architecture: amd64, same push date). We pin
+# `v6.2.0-arm` below: it is the same release as `latest`, runs natively (no
+# QEMU emulation, ~5x less CPU/RAM overhead than the amd64 image under
+# emulation), and at ~1.24GB compressed is actually what "latest" is too —
+# the ~8GB you see in `docker images` is the uncompressed on-disk size after
+# layer extraction, not a sign this tag is bloated or stale relative to
+# `latest`. Docker Hub has not published anything newer than v6.2.0 since
+# the calcom/cal.com -> calcom/cal.diy rename (2026-09-26); no image yet
+# exists under the new `cal.diy` name on Docker Hub or GHCR as of this
+# writing — re-check before every redeploy (see deploy/RUNBOOK.md "Upstream
+# update procedure").
+services:
+  postgres:
+    image: postgres:16-alpine
+    platform: linux/arm64
+    container_name: vcpeer-book-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-calcom}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a password in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-calcom}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - vcpeer-book-postgres-data:/var/lib/postgresql/data
+    ports:
+      # 127.0.0.1-only, same bind pattern as the `calcom` service's own
+      # 3000 mapping below — lets the `platform` service's own local dev
+      # loop (`npm run dev`, run outside Docker for fast iteration) reach
+      # Postgres directly without being inside the `vcpeer-book` Docker
+      # network. Never exposed beyond localhost in production either way.
+      # Host port 55432, not the default 5432 — avoids colliding with any
+      # native/Homebrew Postgres already listening on a dev machine
+      # (confirmed locally: a native postgres on 5432 silently intercepted
+      # this mapping during this repo's own verification pass).
+      - '127.0.0.1:55432:5432'
+    networks:
+      - vcpeer-book
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-calcom} -d ${POSTGRES_DB:-calcom}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 768M
+        reservations:
+          memory: 256M
+
+  # Local-verification only — see RUNBOOK.md section 1 ("Do not run the
+  # mailpit service in production"). Gated behind the "dev" Compose profile
+  # so a bare `docker-compose up -d` (what a redeploy on the box actually
+  # runs) never starts it, even if an operator forgets the warning. Start it
+  # locally with `docker-compose --profile dev up -d`.
+  mailpit:
+    image: axllent/mailpit:latest
+    platform: linux/arm64
+    container_name: vcpeer-book-mailpit
+    restart: unless-stopped
+    profiles: ['dev']
+    ports:
+      - '127.0.0.1:8025:8025' # web UI — view captured mail at http://localhost:8025
+      - '127.0.0.1:1025:1025' # SMTP — local-only, no auth
+    networks:
+      - vcpeer-book
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:8025/readyz']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+
+  calcom:
+    image: calcom/cal.com:v6.2.0-arm
+    platform: linux/arm64 # native arm64 build — see ARM64 note above
+    container_name: vcpeer-book-calcom
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-calcom}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-calcom}
+      DATABASE_DIRECT_URL: postgresql://${POSTGRES_USER:-calcom}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-calcom}
+      # Forces Node's process timezone to UTC (upstream's own .env.example
+      # default) so server-rendered timestamps/logs line up with the UTC
+      # cron cadence in calcom-cron and the Postgres backup cron.
+      TZ: ${TZ:-UTC}
+    ports:
+      - '127.0.0.1:3000:3000'
+    # Overrides the image's default CMD (`/calcom/scripts/start.sh`) to first
+    # patch two statically-built-in Cal.com URLs using Cal.com's OWN
+    # scripts/replace-placeholder.sh (ships inside this image; upstream's own
+    # start.sh already calls it once, for NEXT_PUBLIC_WEBAPP_URL — see that
+    # file at /calcom/scripts/start.sh in the running container). This is
+    # needed because NEXT_PUBLIC_* env vars are inlined into the compiled
+    # `.next` output at Cal.com's own Docker Hub build time, not read at
+    # container-start time for every other NEXT_PUBLIC_* var besides the one
+    # upstream already patches this way — confirmed locally: setting
+    # NEXT_PUBLIC_WEBSITE_PRIVACY_POLICY_URL via env_file alone has ZERO
+    # effect on the rendered page; every real booker filling out the booking
+    # form was being sent to Cal.com's OWN https://cal.com/privacy and
+    # https://cal.com/terms, not VCPeer's, regardless of this repo's .env.
+    # See branding/README.md "Privacy/Terms links are hardcoded, not
+    # runtime-configurable" for the full repro. Falls through to the
+    # unmodified upstream `scripts/start.sh` (migrations, app-store seed,
+    # `yarn start`) once patched — no Cal.com source is forked or edited,
+    # only two already-compiled literal strings are swapped using the
+    # vendor's own tool for exactly this job. NEXT_PUBLIC_WEBSITE_TERMS_URL is
+    # deliberately left unset in .env (no ToS page on vcpeer.com yet — see
+    # .env.example) so that branch is a no-op by design, not a bug: the
+    # booking page keeps linking to Cal.com's real terms page rather than a
+    # broken empty href.
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        cd /calcom
+        if [ -n "$$NEXT_PUBLIC_WEBSITE_PRIVACY_POLICY_URL" ]; then
+          scripts/replace-placeholder.sh "https://cal.com/privacy" "$$NEXT_PUBLIC_WEBSITE_PRIVACY_POLICY_URL"
+        fi
+        if [ -n "$$NEXT_PUBLIC_WEBSITE_TERMS_URL" ]; then
+          scripts/replace-placeholder.sh "https://cal.com/terms" "$$NEXT_PUBLIC_WEBSITE_TERMS_URL"
+        fi
+        exec scripts/start.sh
+    networks:
+      - vcpeer-book
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/auth/login']
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  # cal.diy's bookingReminder / changeTimeZone / webhookTriggers (and the
+  # legacy workflows/scheduleEmailReminders) endpoints are gated behind
+  # CRON_API_KEY and expect an EXTERNAL periodic caller — upstream's own
+  # hosted Cal.com triggers them via its own GitHub Actions cron workflows
+  # (.github/workflows/cron-bookingReminder.yml etc in calcom/cal.diy), not
+  # anything baked into the app container. Before this service existed,
+  # CRON_API_KEY was generated and sitting in .env unused: nothing ever
+  # called these endpoints, so pending-booking reminder emails, timezone
+  # migrations, and webhook delivery retries would silently never fire.
+  # This container replicates upstream's own cron cadence locally.
+  calcom-cron:
+    image: alpine:3.20
+    container_name: vcpeer-book-calcom-cron
+    restart: unless-stopped
+    environment:
+      # alpine's crond reads the container's TZ to interpret the schedule
+      # below. Pin it explicitly instead of relying on the base image's
+      # default (also UTC today, but implicit) — RUNBOOK.md's cadence table
+      # and the Postgres backup cron (03:27 UTC) both assume UTC.
+      TZ: ${TZ:-UTC}
+    networks:
+      - vcpeer-book
+    depends_on:
+      calcom:
+        condition: service_healthy
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        set -e
+        apk add --no-cache curl >/dev/null 2>&1
+        cat > /etc/crontabs/root <<'EOF'
+        */15 * * * * curl -fsS -X POST -H "content-type: application/json" -H "authorization: ${CRON_API_KEY:?set in .env}" http://calcom:3000/api/cron/bookingReminder >>/proc/1/fd/1 2>&1
+        */15 * * * * curl -fsS -X POST -H "content-type: application/json" -H "authorization: ${CRON_API_KEY:?set in .env}" http://calcom:3000/api/cron/workflows/scheduleEmailReminders >>/proc/1/fd/1 2>&1
+        0 * * * * curl -fsS -X POST -H "content-type: application/json" -H "authorization: ${CRON_API_KEY:?set in .env}" http://calcom:3000/api/cron/changeTimeZone >>/proc/1/fd/1 2>&1
+        * * * * * curl -fsS -X POST -H "content-type: application/json" -H "authorization: ${CRON_API_KEY:?set in .env}" http://calcom:3000/api/cron/webhookTriggers >>/proc/1/fd/1 2>&1
+        EOF
+        exec crond -f -l 2
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 64M
+
+  # VCPeer Book Platform — standalone Node/Express service (platform/) that
+  # sits in front of this same Cal.com instance: self-serve signup wizard,
+  # booking-funnel analytics, webhook-driven notifications/no-show
+  # detection, a public REST API + embeddable widget, billing/feature-flags,
+  # and custom-domain provisioning. Talks to Cal.com only over HTTP and
+  # shares the SAME Postgres container/credentials via its own `platform`
+  # schema (platform/src/migrations.sql) — zero Cal.com source touched. See
+  # platform/README section of deploy/RUNBOOK.md for the Caddy routing this
+  # needs on top of this compose file.
+  platform:
+    build: ./platform
+    container_name: vcpeer-book-platform
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-calcom}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-calcom}
+      CALCOM_BASE_URL: http://calcom:3000
+      PLATFORM_PORT: 4100
+      TZ: ${TZ:-UTC}
+      # Shared with the host's real Caddy process via the volume mount
+      # below — see routes/domains.ts's 2026-10-24 fix comment for why this
+      # replaced an in-container-only path that Caddy could never read.
+      CUSTOM_DOMAINS_CADDY_DIR: /app/custom-domains
+    ports:
+      - '127.0.0.1:4100:4100'
+    volumes:
+      # Bind mount, not a named volume — must be a real host path Caddy's
+      # own `import .../custom-domains/*.caddy` (deploy/RUNBOOK.md 8c) can
+      # read directly, not a Docker-managed volume hidden inside
+      # /var/lib/docker. Resolves relative to this compose file's own
+      # directory (./deploy/custom-domains), matching wherever this stack
+      # itself is checked out — no separate host-path env var needed.
+      - ./deploy/custom-domains:/app/custom-domains
+    networks:
+      - vcpeer-book
+    depends_on:
+      postgres:
+        condition: service_healthy
+      calcom:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:4100/healthz']
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+networks:
+  vcpeer-book:
+    name: vcpeer-book
+
+volumes:
+  vcpeer-book-postgres-data:
+    name: vcpeer-book-postgres-data
