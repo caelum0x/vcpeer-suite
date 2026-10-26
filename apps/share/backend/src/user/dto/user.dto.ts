@@ -1,0 +1,103 @@
+import { Expose, plainToClass } from "class-transformer";
+import {
+  IsBoolean,
+  IsEmail,
+  IsInt,
+  IsOptional,
+  Length,
+  Matches,
+  Min,
+  MinLength,
+} from "class-validator";
+import { i18nValidationMessage } from "nestjs-i18n";
+
+export class UserDTO {
+  @Expose()
+  id: string;
+
+  @Expose()
+  @Matches("^[a-zA-Z0-9_.]*$", undefined, {
+    message: i18nValidationMessage("validation.usernamePattern"),
+  })
+  @Length(3, 32)
+  username: string;
+
+  @Expose()
+  @IsEmail()
+  email: string;
+
+  @Expose()
+  @IsOptional()
+  @Matches(/^[\p{L} ,.'-]*$/u, {
+    message: i18nValidationMessage("validation.namePattern"),
+  })
+  displayName?: string;
+
+  @Expose()
+  hasPassword: boolean;
+
+  @MinLength(8)
+  password: string;
+
+  @Expose()
+  isAdmin: boolean;
+
+  @Expose()
+  isActivated: boolean;
+
+  @Expose()
+  isLdap: boolean;
+
+  ldapDN?: string;
+
+  @Expose()
+  @IsOptional()
+  @Matches(/^[0-9]+$/, {
+    message: "shareSizeLimit must contain only digits",
+  })
+  shareSizeLimit?: string;
+
+  @Expose()
+  @IsOptional()
+  @Matches(/^[1-9][0-9]*$/, {
+    message: "storageQuotaLimit must be greater than 0",
+  })
+  storageQuotaLimit?: string;
+
+  @Expose()
+  @IsOptional()
+  @IsBoolean()
+  allowShare: boolean;
+
+  @Expose()
+  @IsOptional()
+  @IsBoolean()
+  allowCreateReverseShares: boolean;
+
+  @Expose()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxShares?: number;
+
+  @Expose()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxReverseShares?: number;
+
+  @Expose()
+  totpVerified: boolean;
+
+  from(partial: Partial<UserDTO>) {
+    const result = plainToClass(UserDTO, partial, {
+      excludeExtraneousValues: true,
+    });
+    result.isLdap = partial.ldapDN?.length > 0;
+    return result;
+  }
+
+  fromList(partial: Partial<UserDTO>[]) {
+    return partial.map((part) => this.from(part));
+  }
+}

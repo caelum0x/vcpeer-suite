@@ -1,0 +1,90 @@
+import { Anchor, Footer as MFooter, SimpleGrid, Text } from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
+import useConfig from "../../hooks/config.hook";
+import useTranslate from "../../hooks/useTranslate.hook";
+
+const Footer = () => {
+  const t = useTranslate();
+  const config = useConfig();
+  const hasImprint = !!(
+    config.get("legal.imprintUrl") || config.get("legal.imprintText")
+  );
+  const hasPrivacy = !!(
+    config.get("legal.privacyPolicyUrl") ||
+    config.get("legal.privacyPolicyText")
+  );
+  const imprintUrl =
+    (!config.get("legal.imprintText") && config.get("legal.imprintUrl")) ||
+    "/imprint";
+  const privacyUrl =
+    (!config.get("legal.privacyPolicyText") &&
+      config.get("legal.privacyPolicyUrl")) ||
+    "/privacy";
+
+  const isMobile = useMediaQuery("(max-width: 700px)");
+
+  return (
+    <MFooter height="auto" py={6} px="xl" zIndex={100}>
+      {!config.get("legal.enabled") && (
+        <Text size="xs" color="dimmed" align="center">
+          Sent with{" "}
+          <Anchor size="xs" href="https://vcpeer.com" target="_blank">
+            VCPeer
+          </Anchor>
+          {" — "}
+          <Anchor size="xs" href="https://vcpeer.com/send" target="_blank">
+            send your own
+          </Anchor>
+          {" • "}
+          <Anchor size="xs" href="https://live.vcpeer.com" target="_blank">
+            VCPeer Live
+          </Anchor>
+          {" • "}
+          <Anchor size="xs" href="https://book.vcpeer.com/admin/30min" target="_blank">
+            book a call
+          </Anchor>
+        </Text>
+      )}
+      {config.get("legal.enabled") && (
+        <SimpleGrid cols={isMobile ? 2 : 3} m={0}>
+          {!isMobile && <div></div>}
+          <Text size="xs" color="dimmed" align={isMobile ? "left" : "center"}>
+            Sent with{" "}
+            <Anchor size="xs" href="https://vcpeer.com" target="_blank">
+              VCPeer
+            </Anchor>
+            {" — "}
+            <Anchor size="xs" href="https://vcpeer.com/send" target="_blank">
+              send your own
+            </Anchor>
+            {" • "}
+            <Anchor size="xs" href="https://live.vcpeer.com" target="_blank">
+              VCPeer Live
+            </Anchor>
+            {" • "}
+            <Anchor size="xs" href="https://book.vcpeer.com/admin/30min" target="_blank">
+              book a call
+            </Anchor>
+          </Text>
+          <div>
+            <Text size="xs" color="dimmed" align="right">
+              {hasImprint && (
+                <Anchor size="xs" href={imprintUrl}>
+                  {t("imprint.title")}
+                </Anchor>
+              )}
+              {hasImprint && hasPrivacy && " • "}
+              {hasPrivacy && (
+                <Anchor size="xs" href={privacyUrl}>
+                  {t("privacy.title")}
+                </Anchor>
+              )}
+            </Text>
+          </div>
+        </SimpleGrid>
+      )}
+    </MFooter>
+  );
+};
+
+export default Footer;

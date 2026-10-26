@@ -1,0 +1,16 @@
+User-agent: *
+Allow: /$
+Allow: /privacy
+Allow: /imprint
+Allow: /wetransfer-alternative
+Allow: /smash-alternative
+Allow: /swisstransfer-alternative
+Disallow: /account
+Disallow: /admin
+Disallow: /auth
+Disallow: /share
+Disallow: /s/
+Disallow: /upload
+Disallow: /api
+
+Sitemap: https://share.vcpeer.com/sitemap.xml

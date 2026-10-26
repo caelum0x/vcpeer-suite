@@ -1,0 +1,21 @@
+{
+  "notEnoughSpace": "Espaço em disco insuficiente disponível",
+  "idInUse": "ID de compartilhamento já em uso",
+  "alreadyCompleted": "Compartilhamento já concluído",
+  "completionRequiresFile": "Você precisa de pelo menos um arquivo em seu compartilhamento para concluí-lo.",
+  "notFound": "Compartilhamento não encontrado",
+  "anonymousNoDelete": "Compartilhamentos anônimos não podem ser excluídos",
+  "anonymousNoExpire": "Compartilhamentos anônimos não podem expirar",
+  "anonymousNoUpdate": "Compartilhamentos anônimos não podem ser atualizados",
+  "invalidExpiration": "Data de expiração inválida",
+  "maxExpirationExceeded": "A data de expiração excede a data de expiração máxima",
+  "storageQuotaExceeded": "Cota de armazenamento do usuário excedida em {exceededSize}",
+  "reverseShareQuotaExceeded": "A cota de armazenamento do proprietário do compartilhamento reverso foi excedida em {exceededSize}",
+  "wrongPassword": "Senha incorreta",
+  "tokenRequired": "Token de compartilhamento obrigatório",
+  "privateShare": "Apenas o criador do compartilhamento reverso pode acessar este compartilhamento",
+  "maxViewsExceeded": "Número máximo de visualizações excedido",
+  "restrictedToRecipients": "Este compartilhamento é restrito a destinatários específicos. Por favor, inicie sessão para acessá-lo.",
+  "notAllowedToShare": "Você não tem permissão para criar compartilhamentos",
+  "maxSharesExceeded": "Limite máximo de compartilhamentos ativos ({max}) atingido"
+}

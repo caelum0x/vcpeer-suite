@@ -1,0 +1,156 @@
+# VCPeer Send
+
+**"Send a link" — the WeTransfer-style file transfer product inside the
+[VCPeer](https://vcpeer.com) suite.**
+
+This is VCPeer's fork of [Pingvin Share X](https://github.com/smp46/pingvin-share-x)
+by smp46, itself a fork of the original
+[Pingvin Share](https://github.com/stonith404/pingvin-share) by stonith404
+(archived). Licensed BSD-2-Clause — see `LICENSE` and `NOTICE.md` for full
+upstream credit. We adopted this project rather than hand-rolling a transfer
+pipeline, chosen over Erugo, psitransfer, timvisee/send, and Gokapi for its
+closer WeTransfer-style UX (named recipients + download notifications) and
+active maintenance.
+
+Deploys at **share.vcpeer.com**, linked from `vcpeer.com/send`. Deploy guide:
+`deploy/RUNBOOK.md`.
+
+## Status
+
+No longer under active feature development by the original team — open
+sourced so others can fork, self-host, or build on it. Issues and PRs
+welcome.
+
+---
+
+The sections below are upstream Pingvin Share X documentation, kept for
+contributors working on this fork.
+
+## Features
+
+- Share files using a link
+- Unlimited file size (restricted only by disk space)
+- Set an expiration date for shares
+- Secure shares with visitor limits and passwords
+- Email recipients
+- Reverse shares
+- OIDC and LDAP authentication
+- Integration with ClamAV for security scans
+- Different file providers: local storage and S3
+
+## Setup
+
+### Installation with Docker (recommended)
+
+1. Download the `docker-compose.yml` file
+2. Run `docker compose up -d`
+
+The website is now listening on `http://localhost:3000`.
+
+> [!TIP]
+> Checkout [stonith404/Pocket ID](https://github.com/stonith404/pocket-id), a user-friendly OIDC provider that lets you easily log in to services like Pingvin Share X using Passkeys. Made by the original creator of Pingvin Share.
+
+### Beta Channel (Testing)
+
+Pingvin Share X now has a beta, this is where all (non-time sensitive) bug fixes, features and other updates will go before reaching stable.
+
+To use the Beta channel:
+1. Update the container image tag in your `docker-compose.yml` to `:beta`:
+   ```yaml
+   image: smp46/pingvin-share-x:beta
+   # or ghcr.io/smp46/pingvin-share-x:beta
+   ```
+2. Pull the latest beta image and recreate the container:
+   ```bash
+   docker compose pull
+   docker compose up -d
+   ```
+
+> [!IMPORTANT]
+> If you encounter any bugs, regressions, or have any other feedback while running the beta version, please [open a GitHub Issue](https://github.com/smp46/pingvin-share-x/issues). Please ensure you specify the exact version (including the beta tag).
+
+### Alternative Deployments
+
+Pingvin Share X can also be deployed through other platforms. For more information, see the [documentation](https://smp46.github.io/pingvin-share-x/setup/installation#alternative-deployments).
+
+## Documentation
+
+For more installation options and advanced configurations, please refer to the [documentation](https://smp46.github.io/pingvin-share-x/).
+
+## Sponsors
+
+If you find Pingvin Share X useful and would like to support its ongoing development and maintenance please consider becoming a sponsor! 
+
+I would like to host a demo instance online for people to try out Pingvin, your sponsorship would make this possible.
+
+As a token of appreciation, sponsors can have their profile or company logo displayed right here in this section.
+
+### Our Awesome Sponsors
+
+| <a href="https://github.com/sponsors/smp46"><img src="https://github.com/images/modules/logos_page/GitHub-Mark.png" width="60px;" alt=""/><br /><sub><b>Your Name Here</b></sub></a> |
+| :---: |
+
+💖 Support the project via [GitHub Sponsors](https://github.com/sponsors/smp46)
+
+## Contributing
+
+All contributions are welcome, including issues, feature suggestions, pull requests and *translations*.
+
+### Translations
+
+This project supports 32 languages so far (to varying degrees), you can help complete
+those translations or add more at [CrowdIn](https://crowdin.com/project/pingvin-share-x).
+
+### AI Usage Policy
+
+Anyone submitting code to this repo needs to read and comply with the project's [AI Usage Policy](https://github.com/smp46/pingvin-share-x/blob/main/AI_USAGE_POLICY.md). Submissions that do not comply with be closed.
+
+### Getting started
+
+If you have found a bug, have suggestion or something else, please create an issue.
+
+### Submit a Pull Request
+
+Before you submit the pull request for review please ensure that
+
+- The pull request naming follows the [Conventional Commits specification](https://www.conventionalcommits.org):
+
+  `<type>[optional scope]: <description>`
+
+  example:
+
+  ```
+  feat(share): add password protection
+  ```
+
+  When `TYPE` can be:
+  - **feat** - is a new feature
+  - **doc** - documentation only changes
+  - **fix** - a bug fix
+  - **refactor** - code change that neither fixes a bug nor adds a feature
+
+- Your pull request has a detailed description
+- You run `npm run format` to format the code
+
+### Setup project
+
+#### Backend
+
+1. Open the `backend` folder
+2. Install the dependencies with `npm install`
+3. Push the database schema to the database by running `npx prisma db push`
+4. Seed the database with `npx prisma db seed`
+5. Start the backend with `npm run dev`
+
+#### Frontend
+
+1. Start the backend first
+2. Open the `frontend` folder
+3. Install the dependencies with `npm install`
+4. Start the frontend with `npm run dev`
+
+You're all set!
+
+#### Testing
+
+At the moment we only have system tests for the backend. To run these tests, run `npm run test:system` in the backend folder.

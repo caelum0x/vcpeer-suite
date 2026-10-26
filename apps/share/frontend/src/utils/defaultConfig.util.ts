@@ -1,0 +1,74 @@
+import Config from "../types/config.type";
+
+export function getDefaultConfig(): Config[] {
+  return [
+    {
+      key: "general.appName",
+      value: "VCPeer Send",
+      defaultValue: "VCPeer Send",
+      type: "string",
+    },
+    {
+      key: "general.showHomePage",
+      value: "true",
+      defaultValue: "true",
+      type: "boolean",
+    },
+    {
+      key: "general.showAuthButtons",
+      value: "true",
+      defaultValue: "true",
+      type: "boolean",
+    },
+    {
+      key: "general.defaultLanguage",
+      value: "en-US",
+      defaultValue: "en-US",
+      type: "string",
+    },
+    {
+      key: "share.enableUserRecipients",
+      value: "false",
+      defaultValue: "false",
+      type: "boolean",
+    },
+    {
+      key: "security.allowRegistration",
+      value: "false",
+      defaultValue: "false",
+      type: "boolean",
+    },
+    {
+      key: "security.allowUnauthenticatedShares",
+      value: "false",
+      defaultValue: "false",
+      type: "boolean",
+    },
+    {
+      key: "smtp.enabled",
+      value: "false",
+      defaultValue: "false",
+      type: "boolean",
+    },
+    {
+      key: "legal.enabled",
+      value: "false",
+      defaultValue: "false",
+      type: "boolean",
+    },
+    { key: "legal.imprintText", value: "", defaultValue: "", type: "text" },
+    { key: "legal.imprintUrl", value: "", defaultValue: "", type: "string" },
+    {
+      key: "legal.privacyPolicyText",
+      value: "",
+      defaultValue: "",
+      type: "text",
+    },
+    {
+      key: "legal.privacyPolicyUrl",
+      value: "",
+      defaultValue: "",
+      type: "string",
+    },
+  ];
+}

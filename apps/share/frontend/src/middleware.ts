@@ -1,0 +1,174 @@
+import { jwtDecode } from "jwt-decode";
+import { NextRequest, NextResponse } from "next/server";
+import configService from "./services/config.service";
+import { getDefaultConfig } from "./utils/defaultConfig.util";
+
+// This middleware redirects based on different conditions:
+// - Authentication state
+// - Setup status
+// - Admin privileges
+
+export const config = {
+  matcher: "/((?!api|static|.*\\..*|_next).*)",
+};
+
+async function fetchConfig(apiUrl: string): Promise<any> {
+  try {
+    const response = await fetch(`${apiUrl}/api/configs`, {
+      next: { revalidate: 30 },
+      signal: AbortSignal.timeout(1000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Config fetch failed: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Config fetch failed, using defaults:", error);
+    return getDefaultConfig();
+  }
+}
+
+export async function middleware(request: NextRequest) {
+  const routes = {
+    unauthenticated: new Routes(["/auth/*", "/"]),
+    public: new Routes([
+      "/share/*",
+      "/s/*",
+      "/upload/*",
+      "/error",
+      "/imprint",
+      "/privacy",
+    ]),
+    // "/admin" (the bare index page) must be listed explicitly, not just
+    // "/admin/*" — the Routes regex requires a trailing "/" after the
+    // prefix, so without this the ADMIN rule below never matched the bare
+    // "/admin" route. That left it relying solely on the generic
+    // "unauthenticated state" rule for protection, which is bypassed when
+    // security.allowUnauthenticatedShares sets routes.public to ["*"],
+    // exposing the /admin shell (nav only; admin API calls still require
+    // real auth) to anonymous visitors.
+    admin: new Routes(["/admin", "/admin/*"]),
+    account: new Routes(["/account*"]),
+    disabled: new Routes([]),
+  };
+
+  // Get config from backend with caching and error handling
+  const apiUrl = process.env.API_URL || "http://localhost:8080";
+  const config = await fetchConfig(apiUrl);
+
+  const getConfig = (key: string) => {
+    return configService.get(key, config);
+  };
+
+  const route = request.nextUrl.pathname;
+  let user: { isAdmin: boolean } | null = null;
+  const accessToken = request.cookies.get("access_token")?.value;
+
+  try {
+    const claims = jwtDecode<{ exp: number; isAdmin: boolean }>(
+      accessToken as string,
+    );
+    if (claims.exp * 1000 > Date.now()) {
+      user = claims;
+    }
+  } catch {
+    user = null;
+  }
+
+  if (!getConfig("security.allowRegistration")) {
+    routes.disabled.routes.push("/auth/signUp");
+  }
+
+  if (getConfig("security.allowUnauthenticatedShares")) {
+    routes.public.routes = ["*"];
+  }
+
+  if (!getConfig("smtp.enabled")) {
+    routes.disabled.routes.push("/auth/resetPassword*");
+  }
+
+  if (!getConfig("legal.enabled")) {
+    routes.disabled.routes.push("/imprint", "/privacy");
+  } else {
+    if (!getConfig("legal.imprintText") && !getConfig("legal.imprintUrl")) {
+      routes.disabled.routes.push("/imprint");
+    }
+    if (
+      !getConfig("legal.privacyPolicyText") &&
+      !getConfig("legal.privacyPolicyUrl")
+    ) {
+      routes.disabled.routes.push("/privacy");
+    }
+  }
+
+  // prettier-ignore
+  const rules = [
+    // Disabled routes
+    {
+      condition: routes.disabled.contains(route),
+      path: "/",
+    },
+     // Authenticated state
+     {
+      condition: user && routes.unauthenticated.contains(route) && !getConfig("security.allowUnauthenticatedShares"),
+      path: "/upload",
+    },
+    // Unauthenticated state
+    {
+      condition: !user && !routes.public.contains(route) && !routes.unauthenticated.contains(route),
+      path: "/auth/signIn",
+    },
+    {
+      condition: !user && routes.account.contains(route),
+      path: "/upload",
+    },
+    // Admin privileges
+    {
+      condition: routes.admin.contains(route) && !user?.isAdmin,
+      path: "/upload",
+    },
+    // Home page
+    {
+      condition: (!getConfig("general.showHomePage") || user) && route == "/",
+      path: "/upload",
+    },
+    // Imprint redirect
+    {
+      condition: route == "/imprint" && !getConfig("legal.imprintText") && getConfig("legal.imprintUrl"),
+      path: getConfig("legal.imprintUrl"),
+    },
+    // Privacy redirect
+    {
+      condition: route == "/privacy" && !getConfig("legal.privacyPolicyText") && getConfig("legal.privacyPolicyUrl"),
+      path: getConfig("legal.privacyPolicyUrl"),
+    },
+  ];
+  for (const rule of rules) {
+    if (rule.condition) {
+      let { path } = rule;
+
+      if (path == "/auth/signIn") {
+        path = path + "?redirect=" + encodeURIComponent(route);
+      }
+      const response = NextResponse.redirect(new URL(path, request.url));
+      response.headers.set("Vary", "x-nextjs-data");
+      return response;
+    }
+  }
+}
+
+// Helper class to check if a route matches a list of routes
+class Routes {
+  // eslint-disable-next-line no-unused-vars
+  constructor(public routes: string[]) {}
+
+  contains(_route: string) {
+    for (const route of this.routes) {
+      if (new RegExp("^" + route.replace(/\*/g, ".*") + "$").test(_route))
+        return true;
+    }
+    return false;
+  }
+}

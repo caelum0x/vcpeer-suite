@@ -1,0 +1,383 @@
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
+import { Config } from "@prisma/client";
+import * as argon from "argon2";
+import { EventEmitter } from "events";
+import * as fs from "fs";
+import * as moment from "moment";
+import { PrismaService } from "src/prisma/prisma.service";
+import { stringToTimespan, timespanToString } from "src/utils/date.util";
+import { parse as yamlParse } from "yaml";
+import { I18nContext } from "nestjs-i18n";
+import { YamlConfig } from "../../prisma/seed/config.seed";
+import {
+  CONFIG_FILE,
+  MARKETING_CLAIMED_MAX_EXPIRATION_DAYS,
+  MARKETING_CLAIMED_MAX_SIZE_BYTES,
+} from "src/constants";
+
+export const LEGACY_CONFIG_ALIASES: Record<
+  string,
+  { category: string; name: string }
+> = {
+  "security.sessionDuration": { category: "general", name: "sessionDuration" },
+  "security.secureCookies": { category: "general", name: "secureCookies" },
+  "security.enableEmailVerification": {
+    category: "email",
+    name: "enableEmailVerification",
+  },
+  "security.allowRegistration": {
+    category: "share",
+    name: "allowRegistration",
+  },
+  "security.allowUnauthenticatedShares": {
+    category: "share",
+    name: "allowUnauthenticatedShares",
+  },
+  "security.allowAdminAccessAllShares": {
+    category: "share",
+    name: "allowAdminAccessAllShares",
+  },
+  "share.enableShareEmailRecipients": {
+    category: "email",
+    name: "enableShareEmailRecipients",
+  },
+  "share.enableShareDownloadNotifications": {
+    category: "email",
+    name: "enableShareDownloadNotifications",
+  },
+};
+
+/**
+ * ConfigService extends EventEmitter to allow listening for config updates,
+ * now only `update` event will be emitted.
+ */
+@Injectable()
+export class ConfigService extends EventEmitter {
+  yamlConfig?: YamlConfig;
+  logger = new Logger(ConfigService.name);
+
+  constructor(
+    @Inject("CONFIG_VARIABLES") private configVariables: Config[],
+    private prisma: PrismaService,
+  ) {
+    super();
+  }
+
+  // Initialize gets called by the ConfigModule
+  async initialize() {
+    await this.loadYamlConfig();
+
+    if (this.yamlConfig) {
+      await this.migrateInitUser();
+    }
+
+    this.checkMarketingClaimsConsistency();
+  }
+
+  // The /wetransfer-alternative, /smash-alternative and
+  // /swisstransfer-alternative landing pages advertise specific numbers for
+  // "max file size" and "link expiry" as competitive differentiators. Those
+  // numbers are hardcoded in the frontend copy (see
+  // frontend/src/constants/marketingLimits.ts) because the comparison
+  // tables need real prose, not a live API call on every page view. That
+  // means the two can silently drift apart whenever `share.maxSize` or
+  // `share.maxExpiration` is changed in config.yaml (or the admin UI)
+  // without updating the frontend's claim to match. This runs once at boot
+  // and writes a loud warning to the logs whenever that happens so the
+  // drift can't reopen silently again like it did before 2026-10-23.
+  private checkMarketingClaimsConsistency() {
+    const actualMaxSize = this.get("share.maxSize");
+    if (actualMaxSize !== MARKETING_CLAIMED_MAX_SIZE_BYTES) {
+      this.logger.warn(
+        `CONFIG DRIFT: share.maxSize is ${actualMaxSize} bytes, but the ` +
+          `landing pages advertise ${MARKETING_CLAIMED_MAX_SIZE_BYTES} bytes ` +
+          `(frontend/src/constants/marketingLimits.ts). Update one to match ` +
+          `the other before the next deploy, or the marketing copy is lying.`,
+      );
+    }
+
+    const actualMaxExpiration = this.get("share.maxExpiration");
+    const actualMaxExpirationDays =
+      actualMaxExpiration.value === 0
+        ? 0
+        : moment
+            .duration(actualMaxExpiration.value, actualMaxExpiration.unit)
+            .asDays();
+    if (actualMaxExpirationDays !== MARKETING_CLAIMED_MAX_EXPIRATION_DAYS) {
+      this.logger.warn(
+        `CONFIG DRIFT: share.maxExpiration is ${timespanToString(
+          actualMaxExpiration,
+        )} (${actualMaxExpirationDays} days, 0 = unlimited), but the ` +
+          `landing pages advertise ${MARKETING_CLAIMED_MAX_EXPIRATION_DAYS} ` +
+          `days (0 = unlimited, "including never") in ` +
+          `frontend/src/constants/marketingLimits.ts. Update one to match ` +
+          `the other before the next deploy, or the marketing copy is lying.`,
+      );
+    }
+  }
+
+  private async loadYamlConfig() {
+    let configFile: string = "";
+    try {
+      configFile = fs.readFileSync(CONFIG_FILE, "utf8");
+    } catch {
+      this.logger.log(
+        "Config.yaml is not set. Falling back to UI configuration.",
+      );
+    }
+    try {
+      this.yamlConfig = yamlParse(configFile);
+
+      if (this.yamlConfig) {
+        for (const configVariable of this.configVariables) {
+          const currentKey = `${configVariable.category}.${configVariable.name}`;
+          const category = this.yamlConfig[configVariable.category];
+          let val = category?.[configVariable.name];
+
+          if (val === undefined && LEGACY_CONFIG_ALIASES[currentKey]) {
+            const legacy = LEGACY_CONFIG_ALIASES[currentKey];
+            const legacyVal = this.yamlConfig[legacy.category]?.[legacy.name];
+            if (legacyVal !== undefined) {
+              val = legacyVal;
+              this.logger.warn(
+                this.t(
+                  "config.deprecatedVariable",
+                  "Config variable '{legacyKey}' is deprecated. Please move it to '{modernKey}' in your config.yaml",
+                  {
+                    legacyKey: `${legacy.category}.${legacy.name}`,
+                    modernKey: `${configVariable.category}.${configVariable.name}`,
+                  },
+                ),
+              );
+            }
+          }
+
+          if (val !== undefined) {
+            configVariable.value = val === null ? null : String(val);
+            this.emit(
+              "update",
+              `${configVariable.category}.${configVariable.name}`,
+              configVariable.value,
+            );
+          }
+        }
+      }
+    } catch (e) {
+      this.logger.error(
+        "Failed to parse config.yaml. Falling back to UI configuration: ",
+        e,
+      );
+    }
+  }
+
+  private async migrateInitUser(): Promise<void> {
+    if (!this.yamlConfig.initUser?.enabled) return;
+
+    const userCount = await this.prisma.user.count({
+      where: { isAdmin: true },
+    });
+    if (userCount === 1) {
+      this.logger.log(
+        "Skip initial user creation. Admin user is already existent.",
+      );
+      return;
+    }
+    await this.prisma.user.create({
+      data: {
+        email: this.yamlConfig.initUser.email,
+        username: this.yamlConfig.initUser.username,
+        password: this.yamlConfig.initUser.password
+          ? await argon.hash(this.yamlConfig.initUser.password)
+          : null,
+        isAdmin: this.yamlConfig.initUser.isAdmin,
+      },
+    });
+  }
+
+  get(key: `${string}.${string}`): any {
+    const configVariable = this.configVariables.filter(
+      (variable) => `${variable.category}.${variable.name}` == key,
+    )[0];
+
+    if (!configVariable) throw new Error(`Config variable ${key} not found`);
+
+    const value = configVariable.value ?? configVariable.defaultValue;
+
+    if (configVariable.type == "number" || configVariable.type == "filesize")
+      return parseInt(value);
+    if (configVariable.type == "boolean") return value == "true";
+    if (configVariable.type == "string" || configVariable.type == "text")
+      return value;
+    if (configVariable.type == "timespan") return stringToTimespan(value);
+  }
+
+  async getByCategory(category: string) {
+    const configVariables = this.configVariables
+      .filter((c) => !c.locked && category == c.category)
+      .sort((a, b) => a.order - b.order);
+
+    return configVariables.map((variable) => {
+      return {
+        ...variable,
+        key: `${variable.category}.${variable.name}`,
+        value: variable.value ?? variable.defaultValue,
+        allowEdit: this.isEditAllowed(),
+      };
+    });
+  }
+
+  async list() {
+    const configVariables = this.configVariables.filter((c) => !c.secret);
+
+    return configVariables.map((variable) => {
+      return {
+        ...variable,
+        key: `${variable.category}.${variable.name}`,
+        value: variable.value ?? variable.defaultValue,
+      };
+    });
+  }
+
+  async updateMany(data: { key: string; value: string | number | boolean }[]) {
+    if (!this.isEditAllowed())
+      throw new BadRequestException(
+        this.t(
+          "config.editNotAllowed",
+          "You are only allowed to update config variables via the config.yaml file",
+        ),
+      );
+
+    const response: Config[] = [];
+
+    for (const variable of data) {
+      response.push(await this.update(variable.key, variable.value));
+    }
+
+    return response;
+  }
+
+  async update(key: string, value: string | number | boolean) {
+    if (!this.isEditAllowed())
+      throw new BadRequestException(
+        this.t(
+          "config.editNotAllowed",
+          "You are only allowed to update config variables via the config.yaml file",
+        ),
+      );
+
+    const configVariable = await this.prisma.config.findUnique({
+      where: {
+        name_category: {
+          category: key.split(".")[0],
+          name: key.split(".")[1],
+        },
+      },
+    });
+
+    if (!configVariable || configVariable.locked)
+      throw new NotFoundException(
+        this.t("config.variableNotFound", "Config variable not found"),
+      );
+
+    if (value === "") {
+      value = null;
+    } else if (
+      typeof value != configVariable.type &&
+      typeof value == "string" &&
+      configVariable.type != "text" &&
+      configVariable.type != "timespan"
+    ) {
+      throw new BadRequestException(
+        this.t("config.invalidType", "Config variable must be of type {type}", {
+          type: configVariable.type,
+        }),
+      );
+    }
+
+    this.validateConfigVariable(key, value);
+
+    const updatedVariable = await this.prisma.config.update({
+      where: {
+        name_category: {
+          category: key.split(".")[0],
+          name: key.split(".")[1],
+        },
+      },
+      data: { value: value === null ? null : value.toString() },
+    });
+
+    this.configVariables = await this.prisma.config.findMany();
+
+    this.emit("update", key, value);
+
+    return updatedVariable;
+  }
+
+  validateConfigVariable(key: string, value: string | number | boolean) {
+    const validations = [
+      {
+        key: "share.shareIdLength",
+        condition: (value: unknown) =>
+          typeof value === "number" && value >= 2 && value <= 50,
+        message: this.t(
+          "config.shareIdLengthValidation",
+          "Share ID length must be between 2 and 50",
+        ),
+      },
+      {
+        key: "share.zipCompressionLevel",
+        condition: (value: unknown) =>
+          typeof value === "number" && value >= 0 && value <= 9,
+        message: this.t(
+          "config.zipCompressionLevelValidation",
+          "Zip compression level must be between 0 and 9",
+        ),
+      },
+      {
+        key: "oauth.allowedHosts",
+        condition: (value: unknown) => {
+          if (typeof value !== "string" || !value) return true;
+          return value.split(",").every((h) => {
+            const trimmed = h.trim();
+            return !trimmed.includes("://") && !trimmed.includes("/");
+          });
+        },
+        message: this.t(
+          "config.oauthAllowedHostsValidation",
+          "Allowed hosts must be a comma-separated list of hostnames without protocol or paths (e.g. share.internal.example.com)",
+        ),
+      },
+      // TODO add validation for timespan type
+    ];
+
+    const validation = validations.find((validation) => validation.key == key);
+    if (validation && !validation.condition(value)) {
+      throw new BadRequestException(validation.message);
+    }
+  }
+
+  isEditAllowed(): boolean {
+    return this.yamlConfig === undefined || this.yamlConfig === null;
+  }
+
+  private t(
+    key: string,
+    fallback: string,
+    args?: Record<string, string | number | boolean>,
+  ) {
+    const translated = I18nContext.current()?.t(key, { args });
+    if (translated && translated !== key) return translated;
+
+    return Object.entries(args ?? {}).reduce(
+      (message, [argKey, value]) =>
+        message.replaceAll(`{${argKey}}`, String(value)),
+      fallback,
+    );
+  }
+}
